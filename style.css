@@ -71,6 +71,7 @@ h1 {
     color: var(--text-color);
     border-radius: 4px;
     font-size: 1rem;
+    min-width: 0; /* Allow input to shrink below its content size */
 }
 #col-todo #add-task-form input:focus {
     outline: none;
