@@ -1,0 +1,267 @@
+:root {
+    /* Dark Theme Palette */
+    --bg-color: #1a1a1a;
+    --surface-color: #2a2a2a;
+    --column-bg: #333333;
+    --card-bg: #444444;
+    --text-color: #e0e0e0;
+    --accent-color: #007bff; /* Blue accent */
+    --border-color: #555555;
+    --shadow-color: rgba(0, 0, 0, 0.5);
+    --drag-over-bg: #505050;
+    --trash-bg: #400000;
+    --trash-drag-over-bg: #600000;
+}
+
+*,
+*::before,
+*::after {
+    box-sizing: border-box;
+    margin: 0;
+    padding: 0;
+}
+
+html,
+body {
+    height: 100%;
+    font-family: system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, 'Open Sans', 'Helvetica Neue', sans-serif;
+    background-color: var(--bg-color);
+    color: var(--text-color);
+    line-height: 1.6;
+    display: flex;
+    flex-direction: column;
+}
+
+body {
+    padding: 1rem;
+}
+
+header {
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border-color);
+    margin-bottom: 1rem;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap; /* Allow wrapping on smaller screens */
+    gap: 1rem;
+}
+
+h1 {
+    color: var(--accent-color);
+    font-weight: 600;
+}
+
+/* Move Add Task form styling here as it's inside the first column now */
+#col-todo #add-task-form {
+    display: flex;
+    gap: 0.5rem;
+    margin-bottom: 1rem; /* Space below form, above tasks */
+}
+
+#col-todo h2 {
+    margin-bottom: 0.5rem; /* Add space between h2 and form */
+}
+
+#col-todo #add-task-form input {
+    flex-grow: 1; /* Allow input to take available space */
+    padding: 0.5rem 0.75rem;
+    border: 1px solid var(--border-color);
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    border-radius: 4px;
+    font-size: 1rem;
+}
+#col-todo #add-task-form input:focus {
+    outline: none;
+    border-color: var(--accent-color);
+    box-shadow: 0 0 0 2px rgba(0, 123, 255, 0.25);
+}
+#col-todo #add-task-form button {
+    padding: 0.5rem 1rem;
+    background-color: var(--accent-color);
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 1rem;
+    transition: background-color 0.2s ease;
+    flex-shrink: 0; /* Prevent button from shrinking */
+}
+#col-todo #add-task-form button:hover {
+     background-color: #0056b3;
+}
+
+/* Remove old separate form styles if they exist */
+/* (Checking previous state... removing header > form styles) */
+/* (Removed old #add-task-form, #new-task-input, button[type="submit"] styles from global scope) */
+
+.kanban-board {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr); /* Updated for 5 columns */
+    gap: 1rem;
+    flex-grow: 1; /* Allow board to fill available vertical space */
+    min-height: 0; /* Prevent overflow issues with flex-grow */
+}
+
+.kanban-column {
+    background-color: var(--column-bg);
+    border-radius: 8px;
+    padding: 1rem;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 2px 5px var(--shadow-color);
+}
+
+.kanban-column h2 {
+    margin-bottom: 1rem;
+    font-size: 1.2rem;
+    font-weight: 500;
+    text-align: center;
+    border-bottom: 1px solid var(--border-color);
+    padding-bottom: 0.5rem;
+}
+
+.tasks-container {
+    flex-grow: 1;
+    /* min-height: 100px; Remove or lower min-height if max-height is set */
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    overflow-y: auto; /* Keep this to enable scrolling */
+    /* Estimate: 100vh - header - col title/padding - footer - body padding */
+    /* Adjust the subtracted value (e.g., 410px) based on actual layout */
+    max-height: calc(100vh - 410px); 
+    padding-right: 5px; /* Add a little padding so scrollbar doesn't overlap content */
+    padding-bottom: 1rem; /* Add space at the bottom within the scrollable area */
+}
+
+.task {
+    background-color: var(--card-bg);
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px var(--shadow-color);
+    cursor: grab;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    word-wrap: break-word; /* Prevent long text from overflowing */
+}
+
+/* Style for completed tasks */
+.task.completed {
+    opacity: 0.7;
+    text-decoration: line-through;
+    background-color: #3a5a40; /* Dark green tint */
+    position: relative;
+    padding-left: 2.5rem; /* Make space for checkmark */
+}
+
+.task.completed::before {
+    content: '\2714'; /* Checkmark symbol */
+    position: absolute;
+    left: 0.75rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: #70e000; /* Bright green */
+    font-size: 1.2rem;
+    font-weight: bold;
+}
+
+.task:active {
+    cursor: grabbing;
+}
+
+/* Drag and Drop Styling */
+.task.dragging {
+    /* Remove original element completely from layout */
+    display: none !important; 
+    /* Opacity/pointer-events etc. are irrelevant if display is none */
+}
+
+/* Style for the cloned task used as placeholder - visually distinct */
+.task-placeholder {
+    /* Inherit most task styles via cloning */
+    opacity: 0.4;
+    border: 2px dashed var(--accent-color) !important; 
+    box-shadow: none !important; 
+    cursor: grabbing;
+    pointer-events: none;
+    /* Ensure it has normal layout */
+    height: auto !important; 
+    padding-top: 0.75rem !important;
+    padding-bottom: 0.75rem !important;
+    margin: 0 !important; /* REMOVE vertical margins */
+    border-width: 1px !important; 
+    overflow: visible !important;
+}
+
+/* Remove margin-top from a task if it directly follows the placeholder - REMOVED */
+/* .task-placeholder + .task { ... } */
+
+/* Class to apply when task makes space for placeholder - REMOVED */
+/* .task-displaced { ... } */
+
+.kanban-column.drag-over {
+    background-color: var(--drag-over-bg);
+    margin-top: -3px; /* Adjust for border */
+}
+
+footer {
+    margin-top: 1rem;
+    padding-top: 1rem;
+    border-top: 1px solid var(--border-color);
+}
+
+#trash-area {
+    background-color: var(--trash-bg);
+    border: 2px dashed var(--border-color);
+    border-radius: 8px;
+    padding: 1.5rem;
+    text-align: center;
+    color: #aaa;
+    font-size: 1.2rem;
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+#trash-area.drag-over {
+    background-color: var(--trash-drag-over-bg);
+    border-color: #ff4d4d; /* Reddish border when dragging over */
+    color: var(--text-color);
+}
+
+#trash-area p {
+    margin-bottom: 0.5rem;
+    font-size: 0.9rem;
+}
+
+/* Simple scrollbar styling for webkit browsers */
+::-webkit-scrollbar {
+    width: 8px;
+    height: 8px;
+}
+
+::-webkit-scrollbar-track {
+    background: var(--surface-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+
+/* Class to apply when task makes space for placeholder - REMOVED */
+/* .task-displaced { ... } */
+
+.task {
+    background-color: var(--card-bg);
+    padding: 0.75rem 1rem;
+    border-radius: 4px;
+    box-shadow: 0 1px 3px var(--shadow-color);
+    cursor: grab;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, opacity 0.2s ease;
+    word-wrap: break-word; /* Prevent long text from overflowing */
+} 
