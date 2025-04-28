@@ -27,6 +27,7 @@ let nextColorIndex = 0; // Index for cycling through taskColors
 let lastDroppedTaskId = null; // Track last dropped task for animation
 let draggedTab = null; // Tab element being dragged
 let draggedTabId = null; // Project ID of the tab being dragged
+let isAddingProject = false; // Flag to prevent multiple add inputs
 
 // --- Color Palette ---
 // Expanded palette of background colors for tasks (suitable for dark theme)
@@ -149,26 +150,35 @@ function getActiveTasks() {
 function renderTabs() {
     console.log("Rendering project tabs...");
     projectTabsContainer.innerHTML = ''; // Clear existing tabs
+    isAddingProject = false; // Reset flag on render
 
     if (!appData || !appData.projects) {
         console.error("Cannot render tabs: appData or projects array is missing.");
         return;
     }
 
+    // Render actual project tabs
     appData.projects.forEach(project => {
         const tab = document.createElement('button');
         tab.classList.add('project-tab');
         tab.textContent = project.name;
         tab.dataset.projectId = project.id;
-        tab.setAttribute('draggable', 'true'); // Make tab draggable
+        tab.setAttribute('draggable', 'true'); // Make project tabs draggable
         if (project.id === appData.activeProjectId) {
             tab.classList.add('active');
         }
-        // Tab click listener is handled by delegation now
-        // tab.addEventListener('click', handleTabClick); // REMOVED
         projectTabsContainer.appendChild(tab);
     });
-    console.log(`Rendered ${appData.projects.length} tabs. Active: ${appData.activeProjectId}`);
+
+    // Append the "Add Project" tab
+    const addTab = document.createElement('button');
+    addTab.classList.add('project-tab-add');
+    addTab.id = 'add-project-tab'; // Specific ID for easy targeting
+    addTab.textContent = '+';
+    addTab.setAttribute('draggable', 'false'); // Ensure Add tab is not draggable
+    projectTabsContainer.appendChild(addTab);
+
+    console.log(`Rendered ${appData.projects.length} project tabs + Add tab. Active: ${appData.activeProjectId}`);
 }
 
 // Click event logic moved to delegated listener below
@@ -234,7 +244,16 @@ function handleTabDrop(event) {
     clearTabDragIndicators();
     if (!draggedTabId) return;
 
-    const targetTabElement = event.target.closest('.project-tab');
+    const targetElement = event.target;
+    const addTabElement = document.getElementById('add-project-tab');
+
+    // Prevent dropping onto or after the Add tab
+    if (targetElement === addTabElement || (targetElement.closest('.project-tab') && targetElement.closest('.project-tab') === addTabElement)) {
+        console.log("Drop prevented: Cannot drop onto or after the Add tab.");
+        return;
+    }
+
+    const targetTabElement = targetElement.closest('.project-tab');
     const targetProjectId = targetTabElement ? targetTabElement.dataset.projectId : null;
 
     if (targetProjectId === draggedTabId) {
@@ -257,17 +276,15 @@ function handleTabDrop(event) {
         targetIndex = appData.projects.findIndex(p => p.id === targetProjectId);
 
         if (targetIndex !== -1) {
-            // Adjust index based on drop position relative to target center
             appData.projects.splice(targetIndex + (isAfter ? 1 : 0), 0, movedProject);
         } else {
-             // Fallback: Append if target index is invalid (shouldn't happen ideally)
-             console.warn("Target project for drop not found, appending.");
-             appData.projects.push(movedProject);
+             console.warn("Target project for drop not found, appending before Add tab.");
+             appData.projects.push(movedProject); // Add to end (which is before Add tab)
         }
     } else {
-        // Dropped in the container but not on a specific tab (append to end)
+        // Dropped in the container but not on a specific tab (append to end - before Add tab)
         appData.projects.push(movedProject);
-        console.log("Dropped tab in container, appending to end.");
+        console.log("Dropped tab in container, appending before Add tab.");
     }
 
     console.log("New project order:", appData.projects.map(p => p.name));
@@ -297,13 +314,8 @@ function clearTabDragIndicators() {
 function createTaskElement(task) {
     const taskElement = document.createElement('div');
     taskElement.classList.add('task');
-    if (task.column === 'col-completed') {
-        taskElement.classList.add('completed');
-    }
-
+    
     // --- Apply Task Color ---
-    // Apply the color stored with the task.
-    // Add a fallback default color if somehow a task lacks one.
     taskElement.style.backgroundColor = task.color || taskColors[0];
     // --- End Apply Task Color ---
 
@@ -320,103 +332,60 @@ function createTaskElement(task) {
 }
 
 function renderTasks() {
-    console.log("Starting smart render...");
+    console.log("Starting renderTasks (Clear & Rebuild strategy)...");
     const activeProject = getActiveProject();
+    const tasksToRender = activeProject ? activeProject.tasks : [];
+
     if (!activeProject) {
         console.warn("RenderTasks called but no active project found. Clearing columns.");
-        columns.forEach(column => {
-            const container = column.querySelector('.tasks-container');
-            if (container) container.innerHTML = ''; // Clear content
-        });
-        return; // Nothing to render
     }
-
-    const tasksToRender = activeProject.tasks; // Use tasks from the active project
-    console.log(`Rendering tasks for project: ${activeProject.id} (${activeProject.name}), ${tasksToRender.length} tasks.`);
-
-    const allRenderedTaskIds = new Set(); // Keep track of tasks rendered in this cycle
+    console.log(`[Render] Rendering tasks for project: ${activeProject?.id}. Total tasks: ${tasksToRender.length}`);
 
     columns.forEach(column => {
         const columnId = column.id;
         const container = column.querySelector('.tasks-container');
-        if (!container) return;
+        if (!container) {
+            console.error(`Tasks container not found for column ${columnId}`);
+            return;
+        }
 
-        console.log(`Smart rendering column: ${columnId}`);
+        // --- Clear and Rebuild --- 
+        container.innerHTML = ''; // Clear existing tasks in the column
 
-        // 1. Get desired state (sorted tasks for this column)
-        const tasksForColumn = tasksToRender // Use project's tasks
+        // Get tasks for this column, sorted by order
+        const tasksForColumn = tasksToRender
             .filter(task => task.column === columnId)
             .sort((a, b) => a.order - b.order);
 
-        // 2. Get current DOM elements for this column
-        const currentTaskElements = Array.from(container.querySelectorAll('.task'));
-        const currentElementMap = new Map(currentTaskElements.map(el => [el.dataset.taskId, el]));
-        console.log(` -> Found ${currentTaskElements.length} existing DOM elements.`);
-
-        // 3. Reconcile: Iterate through desired state and update/move/add DOM elements
-        let previousElement = null; // Keep track of the last correctly positioned element
-        tasksForColumn.forEach((taskData, index) => {
-            allRenderedTaskIds.add(taskData.id); // Mark this task as processed
-            let taskElement = currentElementMap.get(taskData.id);
-
-            if (taskElement) {
-                // --- Task exists: Update and Position --- 
-                console.log(` -> Reconciling existing task: ${taskData.id}`);
-                // Update content/classes if necessary (e.g., completed status, text)
-                taskElement.textContent = taskData.title; // Ensure title is up-to-date
-                 // Ensure correct 'completed' class state
-                 if (taskData.column === 'col-completed' && !taskElement.classList.contains('completed')) {
-                     taskElement.classList.add('completed');
-                 } else if (taskData.column !== 'col-completed' && taskElement.classList.contains('completed')) {
-                     taskElement.classList.remove('completed');
-                 }
-                 // Update color if needed (less common, but for completeness)
-                 if (taskElement.style.backgroundColor !== taskData.color) {
-                      taskElement.style.backgroundColor = taskData.color || taskColors[0];
-                 }
-
-                // Check position: Should it be after `previousElement`?
-                 // The `insertBefore` method handles moves correctly. If the element
-                 // is already in the correct position relative to the target sibling,
-                 // it effectively does nothing.
-                const expectedNextSibling = previousElement ? previousElement.nextElementSibling : container.firstChild;
-                if (taskElement !== expectedNextSibling) {
-                     console.log(` -> Moving task ${taskData.id} to position ${index}`);
-                     container.insertBefore(taskElement, expectedNextSibling);
-                }
-                previousElement = taskElement; // Update the reference to the last correctly positioned element
-                currentElementMap.delete(taskData.id); // Remove from map as it's been handled
+        // Create and append task elements
+        tasksForColumn.forEach(taskData => {
+            // --- LOGGING: Task Data during Render --- 
+            console.log(`[Render] Processing task ${taskData.id} for column ${columnId}. Data:`, JSON.parse(JSON.stringify(taskData)));
+            
+            const taskElement = createTaskElement(taskData); // Create the basic element
+            
+            // --- Apply completed state explicitly after creation ---
+            if (taskData.column === 'col-completed') {
+                // --- LOGGING: Applying Completed Class --- 
+                console.log(`[Render] --> ADDING .completed class to ${taskData.id}`);
+                taskElement.classList.add('completed');
             } else {
-                // --- Task doesn't exist: Create and Insert --- 
-                console.log(` -> Creating and inserting new task: ${taskData.id} at position ${index}`);
-                taskElement = createTaskElement(taskData);
-                // Insert at the correct position relative to the last placed element
-                const insertBeforeElement = previousElement ? previousElement.nextElementSibling : container.firstChild;
-                container.insertBefore(taskElement, insertBeforeElement);
-                previousElement = taskElement; // Update the reference
+                // --- LOGGING: NOT Applying Completed Class --- 
+                // Optional: Log if it *would* remove it, though createTaskElement doesn't add it.
+                // console.log(`[Render] --> Ensuring .completed class is NOT on ${taskData.id}`);
             }
-        });
+            // --- End completed state --- 
 
-        // 4. Remove leftover elements: Any elements remaining in currentElementMap 
-        //    are no longer in the desired state for this column.
-        currentElementMap.forEach((elementToRemove, taskId) => {
-            console.log(` -> Removing task ${taskId} from column ${columnId}`);
-            container.removeChild(elementToRemove);
+            container.appendChild(taskElement); // Add to the DOM
         });
-    });
-
-    // Optional: A final check for tasks in the `tasks` array that somehow weren't rendered 
-    // (e.g., assigned to a non-existent column). This is more defensive coding.
-    tasksToRender.forEach(taskData => { // Check the rendered tasks
-        if (!allRenderedTaskIds.has(taskData.id)) {
-             console.warn(`Task ${taskData.id} exists in data but was not rendered. Assigning to default column.`);
-             taskData.column = 'col-todo'; // Or handle appropriately
-             // Potentially call renderTasks again or handle the error
+        // --- LOGGING: Column Done --- 
+        if(columnId === 'col-completed') {
+            console.log(`[Render] Finished rendering 'col-completed'. Container innerHTML length: ${container.innerHTML.length}`);
         }
+        // --- End Clear and Rebuild ---
     });
 
-    console.log("Smart render finished.");
-    // saveAppData(); // Save is already called after drop/add/delete
+    console.log("[Render] RenderTasks (Clear & Rebuild) finished.");
 }
 
 function addTask(title) {
@@ -670,17 +639,26 @@ function handleDropOnColumn(event) {
 
     // --- Step 1: Determine Target Element ID based on drop coordinates --- 
     const dropY = event.clientY;
-    let elementToInsertBefore = null;
-    const tasksForThreshold = currentTasks.filter(t => t.column === targetColumnId);
-    for (const taskElement of tasksForThreshold) {
-        const rect = taskElement.getBoundingClientRect();
+    let elementToInsertBefore = null; // This will be a DOM element
+    
+    // Get the actual DOM elements currently in the target column's container
+    const targetContainer = targetColumnElement.querySelector('.tasks-container');
+    if (!targetContainer) {
+        console.error("Drop failed: Target container not found in column", targetColumnId);
+        return;
+    }
+    const tasksInColumnElements = targetContainer.querySelectorAll('.task:not(.dragging)'); // Exclude the one being dragged if it's already there
+
+    // Iterate over DOM elements to find the insertion point
+    for (const currentTaskElement of tasksInColumnElements) {
+        const rect = currentTaskElement.getBoundingClientRect(); // Correct: Call on DOM element
         const threshold = rect.top + rect.height * 0.55;
         if (dropY < threshold) {
-            elementToInsertBefore = taskElement;
+            elementToInsertBefore = currentTaskElement; // Store the DOM element
             break;
         }
     }
-    const targetElementId = elementToInsertBefore ? elementToInsertBefore.id : null;
+    const targetElementId = elementToInsertBefore ? elementToInsertBefore.dataset.taskId : null; // Get ID from the target DOM element
     console.log(`Drop Calc: Target element ID (from drop Y ${dropY.toFixed(1)}): ${targetElementId}`);
 
     // --- Step 2: Remove the dragged task data from the array --- 
@@ -692,8 +670,14 @@ function handleDropOnColumn(event) {
     }
     const [draggedTaskData] = currentTasks.splice(draggedTaskIndex, 1);
     const oldColumnId = draggedTaskData.column;
-    draggedTaskData.column = targetColumnId;
-    console.log(`Task ${draggedTaskId} data removed from original index ${draggedTaskIndex} in project ${activeProject.id}`);
+
+    // --- LOGGING: Before Update --- 
+    console.log(`[Drop] Task ${draggedTaskId} Data BEFORE update: column=${oldColumnId}`);
+    
+    draggedTaskData.column = targetColumnId; // Update column in data
+    
+    // --- LOGGING: After Update ---
+    console.log(`[Drop] Task ${draggedTaskId} Data AFTER update: column=${draggedTaskData.column}`);
 
     // --- Step 3: Find the new index in the tasks array based on targetElementId --- 
     let finalInsertionIndex = -1;
@@ -734,15 +718,15 @@ function handleDropOnColumn(event) {
         recalculateOrderForColumn(oldColumnId);
     }
 
+    // --- LOGGING: Before Save --- 
+    console.log(`[Drop] appData state just BEFORE save:`, JSON.parse(JSON.stringify(appData))); // Deep copy for logging
+
     saveAppData(); // Save the updated app data
 
-    // --- Step 6: Render (NO ANIMATION HERE) --- 
-    console.log("Calling final renderTasks after drop...");
-    renderTasks();
-    // --- Remove Animation Logic --- 
-    // requestAnimationFrame(() => { ... removed ... });
-    // --- End Remove Animation Logic --- 
-
+    // --- Step 6: Render --- 
+    console.log("[Drop] Calling final renderTasks after drop...");
+    renderTasks(); // Rely on this to set the correct classes based on updated data
+    
     console.log(`--- Drop Event End ---`);
 }
 
@@ -765,16 +749,26 @@ function recalculateOrderForColumn(columnId) {
     // saveAppData(); // Removed redundant save
 }
 
+// --- Trash Area Handlers (Updated) ---
+
 // Drag over Trash Area
 function handleDragOverTrash(event) {
     event.preventDefault();
-    event.dataTransfer.dropEffect = 'move'; // Indicate it's a move (delete)
-    this.classList.add('drag-over');
+    // Accept both tasks and tabs
+    if (draggedTaskId || draggedTabId) {
+        event.dataTransfer.dropEffect = 'move';
+        this.classList.add('drag-over');
+    } else {
+        event.dataTransfer.dropEffect = 'none'; // Don't allow drop if nothing relevant is dragged
+    }
 }
 
 // Drag leaving Trash Area
 function handleDragLeaveTrash(event) {
-     this.classList.remove('drag-over');
+     // Check if the mouse truly left the element and its children
+     if (!this.contains(event.relatedTarget)) {
+         this.classList.remove('drag-over');
+     }
 }
 
 // Drop on Trash Area
@@ -782,52 +776,206 @@ function handleDropOnTrash(event) {
     event.preventDefault();
     this.classList.remove('drag-over');
 
-    console.log(`Drop on Trash: Task ${draggedTaskId}`);
+    // --- Handle Task Deletion --- 
+    if (draggedTaskId) {
+        console.log(`Drop Task on Trash: ${draggedTaskId}`);
+        const activeProject = getActiveProject();
+        if (!activeProject) {
+            console.error("Task delete failed: No active project.");
+            return;
+        }
+        const currentTasks = activeProject.tasks;
+        const taskIndex = currentTasks.findIndex(t => t.id === draggedTaskId);
 
-    const activeProject = getActiveProject();
-    if (!activeProject) {
-        console.error("Delete failed: No active project.");
+        if (taskIndex > -1) {
+            const deletedTaskColumn = currentTasks[taskIndex].column;
+            currentTasks.splice(taskIndex, 1); // Remove task
+            recalculateOrderForColumn(deletedTaskColumn); // Re-order source column
+            saveAppData();
+            renderTasks(); // Re-render tasks for the active project
+            console.log(`Task ${draggedTaskId} deleted.`);
+        } else {
+            console.error("Could not find task to delete in active project with ID:", draggedTaskId);
+        }
+    // --- Handle Project Deletion --- 
+    } else if (draggedTabId) {
+        console.log(`Drop Project Tab on Trash: ${draggedTabId}`);
+        const projectIndex = appData.projects.findIndex(p => p.id === draggedTabId);
+
+        if (projectIndex > -1) {
+            const projectToDelete = appData.projects[projectIndex];
+            
+            // --- Determine if confirmation is needed --- 
+            let needsConfirmation = true; 
+            const tasks = projectToDelete.tasks;
+            if (tasks.length === 0) {
+                needsConfirmation = false;
+                console.log("Skipping delete confirmation: Project is empty.");
+            } else if (tasks.every(task => task.column === 'col-completed')) {
+                needsConfirmation = false;
+                console.log("Skipping delete confirmation: All tasks are completed.");
+            }
+            // --- End Confirmation Check ---
+
+            // Proceed with deletion if no confirmation needed OR user confirms
+            if (!needsConfirmation || confirm(`Are you sure you want to delete the project "${projectToDelete.name}"? This cannot be undone.`)) {
+                const deletedProjectId = projectToDelete.id;
+                appData.projects.splice(projectIndex, 1); // Remove project
+                console.log(`Project ${deletedProjectId} deleted from data.`);
+
+                // Handle active project change if necessary
+                if (appData.activeProjectId === deletedProjectId) {
+                    console.log("Active project was deleted. Selecting new active project.");
+                    if (appData.projects.length > 0) {
+                        const newActiveIndex = Math.max(0, projectIndex - 1);
+                        appData.activeProjectId = appData.projects[newActiveIndex].id;
+                        console.log(`New active project set to: ${appData.activeProjectId}`);
+                    } else {
+                        appData.activeProjectId = null;
+                        console.log("No projects remaining. Active project set to null.");
+                    }
+                }
+
+                saveAppData();
+                renderTabs();   // Re-render tabs
+                renderTasks();  // Re-render tasks
+            } else {
+                console.log("Project deletion cancelled by user (or skipped due to confirmation).");
+            }
+        } else {
+            console.error("Could not find project to delete with ID:", draggedTabId);
+        }
+    } else {
+         console.log("Drop on trash ignored: No valid task or tab ID found.");
+    }
+
+    // Ensure dragged IDs are cleared
+    draggedTaskId = null;
+    draggedTabId = null;
+}
+
+// --- End Trash Area Handlers ---
+
+// --- Add Project Inline Input Functions ---
+function showAddProjectInput(addTabElement) {
+    if (isAddingProject) return; // Prevent multiple inputs
+    isAddingProject = true;
+
+    addTabElement.textContent = ''; // Clear the '+'
+    addTabElement.style.padding = '0'; // Remove padding to fit input better
+    addTabElement.style.borderStyle = 'solid'; // Change border while input is active
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.classList.add('tab-input');
+    input.placeholder = "New Project Name...";
+    input.id = 'new-project-input'; // ID for potential future reference
+
+    input.addEventListener('blur', handleNewProjectInput);
+    input.addEventListener('keydown', handleNewProjectInput);
+
+    addTabElement.appendChild(input);
+    input.focus();
+}
+
+function handleNewProjectInput(event) {
+    const inputElement = event.target;
+    const addTabElement = inputElement.closest('.project-tab-add');
+    const projectName = inputElement.value.trim();
+
+    // Check the flag first
+    if (!isAddingProject) {
+        console.log("handleNewProjectInput skipped: isAddingProject is false.");
+        // Ensure listeners are removed if flag is false but somehow event fires
+        removeInputListeners(inputElement);
         return;
     }
-    const currentTasks = activeProject.tasks;
 
-    const taskIndex = currentTasks.findIndex(t => t.id === draggedTaskId);
-    if (taskIndex > -1) {
-        const deletedTaskColumn = currentTasks[taskIndex].column;
-        currentTasks.splice(taskIndex, 1); // Remove the task from the active project's array
-        recalculateOrder(deletedTaskColumn); // Re-order the column it came from (uses active project context)
-        saveAppData();
-        renderTasks(); // Re-render the active project
-    } else {
-        console.error("Could not find task to delete in active project with ID:", draggedTaskId);
-    }
-}
-
-// --- Add New Project ---
-function handleAddProject() {
-    console.log("handleAddProject called");
-    const projectName = prompt("Enter the name for the new project:");
-    if (projectName && projectName.trim() !== "") {
-        if (!appData.projects) {
-            console.error("Error: appData.projects is not initialized.");
-            appData.projects = []; // Initialize if missing
+    if (event.type === 'keydown' && event.key === 'Enter') {
+        event.preventDefault();
+        if (projectName) {
+            console.log("Enter pressed - creating project:", projectName);
+            // --- Explicitly remove blur listener --- 
+            inputElement.removeEventListener('blur', handleNewProjectInput);
+            console.log("Blur listener removed explicitly.");
+            // --- Proceed with creation ---
+            createNewProject(projectName);
+            cancelNewProjectInput(addTabElement, true); // Clean up visuals/flag
+            renderTabs(); // Re-render UI
+            renderTasks();
+        } else {
+            // Enter pressed, empty name: Cancel
+            console.log("Enter pressed - empty name, cancelling.");
+            cancelNewProjectInput(addTabElement);
         }
-        const newProjectId = generateId();
-        const newProject = {
-            id: newProjectId,
-            name: projectName.trim(),
-            tasks: []
-        };
-        appData.projects.push(newProject);
-        appData.activeProjectId = newProjectId; // Make the new project active
-        saveAppData();
-        renderTabs(); // Re-render tabs to show the new one
-        renderTasks(); // Render tasks for the (empty) new project
-        console.log("New project added:", newProject);
-    } else if (projectName !== null) { // Only show alert if prompt wasn't cancelled
-        alert("Project name cannot be empty.");
+    } else if (event.type === 'blur') {
+        // Blur event - This should only run if Enter didn't handle it
+        console.log("Blur event triggered.");
+        if (projectName) {
+            console.log("Blur - creating project:", projectName);
+            // Ensure keydown listener is also removed
+            removeInputListeners(inputElement);
+            createNewProject(projectName);
+            cancelNewProjectInput(addTabElement, true); // Clean up visuals/flag
+            renderTabs(); // Re-render UI
+            renderTasks();
+        } else {
+            // Blur, empty name: Cancel
+            console.log("Blur - empty name, cancelling.");
+            cancelNewProjectInput(addTabElement);
+        }
+    } else if (event.type === 'keydown' && event.key === 'Escape') {
+        console.log("Escape pressed - cancelling.");
+        cancelNewProjectInput(addTabElement);
     }
 }
+
+// Helper function to create the project
+function createNewProject(projectName) {
+    if (!appData.projects) appData.projects = [];
+    const newProjectId = generateId('proj');
+    const newProject = {
+        id: newProjectId,
+        name: projectName,
+        tasks: []
+    };
+    appData.projects.push(newProject);
+    appData.activeProjectId = newProjectId;
+    saveAppData();
+    console.log("New project created and saved:", newProject);
+}
+
+// Updated cancel function
+function cancelNewProjectInput(addTabElement, projectCreated = false) {
+    if (!addTabElement) return;
+
+    const input = addTabElement.querySelector('.tab-input');
+    if (input) {
+        removeInputListeners(input); // Remove listeners first
+        addTabElement.removeChild(input); // Then remove element
+        console.log("Input element removed and listeners detached.");
+    }
+
+    // Restore '+' only if cancelled, not if created (renderTabs handles created)
+    if (!projectCreated) {
+        addTabElement.innerHTML = '+';
+        addTabElement.style.padding = '';
+        addTabElement.style.borderStyle = '';
+        console.log("'+' tab restored.");
+    }
+
+    isAddingProject = false; // Reset the flag
+    console.log("cancelNewProjectInput finished. projectCreated:", projectCreated, "isAddingProject:", isAddingProject);
+}
+
+// Helper to remove listeners
+function removeInputListeners(inputElement) {
+     if (!inputElement) return;
+     inputElement.removeEventListener('blur', handleNewProjectInput);
+     inputElement.removeEventListener('keydown', handleNewProjectInput);
+     console.log("Input listeners removed.");
+}
+// --- End Add Project Inline Input Functions ---
 
 // --- Initialization ---
 function initializeApp() {
@@ -934,9 +1082,14 @@ document.addEventListener('DOMContentLoaded', () => {
     if (projectTabsContainer) {
         // Click Handler
         projectTabsContainer.addEventListener('click', (event) => {
-             const tab = event.target.closest('.project-tab');
-             if (tab) {
-                 handleTabClickLogic(tab.dataset.projectId);
+             const tab = event.target.closest('.project-tab, .project-tab-add');
+             if (!tab) return; // Click wasn't on a tab or the add button
+
+             if (tab.id === 'add-project-tab') {
+                 console.log("Add project tab clicked");
+                 showAddProjectInput(tab); // Initiate inline input
+             } else if (tab.classList.contains('project-tab')) {
+                 handleTabClickLogic(tab.dataset.projectId); // Handle regular tab click
              }
         });
 
@@ -947,7 +1100,6 @@ document.addEventListener('DOMContentLoaded', () => {
         projectTabsContainer.addEventListener('dragend', handleTabDragEnd);
         // Add dragleave to clear indicators when leaving the container
         projectTabsContainer.addEventListener('dragleave', (event) => {
-            // Check if the mouse left the container bounds entirely
             if (!projectTabsContainer.contains(event.relatedTarget)) {
                  clearTabDragIndicators();
             }
@@ -955,13 +1107,6 @@ document.addEventListener('DOMContentLoaded', () => {
 
     } else {
         console.error("Error: Project tabs container not found");
-    }
-
-    // Add Project Button Click
-    if (addProjectBtn) {
-        addProjectBtn.addEventListener('click', handleAddProject);
-    } else {
-        console.error("Error: Add Project button not found");
     }
 
     // Add Task Form Submission
@@ -973,7 +1118,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Column/Task Drag and Drop Listeners (attached in initializeApp)
 
-    console.log("DOM Listeners Added (including tab delegation)");
+    console.log("DOM Listeners Added (including updated tab delegation)");
 });
 
 console.log("script.js execution end");

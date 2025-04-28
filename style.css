@@ -329,26 +329,25 @@ footer {
     background-color: var(--card-bg); /* Use card background on hover */
 }
 
-.add-project-btn {
-    /* background-color: #5cb85c; */ /* Remove specific green */
-    background-color: var(--accent-color); /* Use accent color */
-    color: white; /* Keep white '+' */
-    border: none;
-    border-radius: 50%;
-    width: 28px;
-    height: 28px;
-    font-size: 20px;
-    line-height: 28px; /* Better vertical centering */
-    text-align: center;
+/* Special style for the Add Project Tab button */
+.project-tab-add {
+    padding: 8px 15px;
     cursor: pointer;
-    margin-left: 10px;
+    border: 1px dashed var(--border-color); /* Dashed border to differentiate */
+    border-radius: 5px;
+    background-color: transparent; /* Transparent background */
+    color: var(--accent-color); /* Accent color for '+' */
+    font-weight: bold;
+    font-size: 1.1em; /* Slightly larger '+' */
+    margin-left: 5px; /* Space from last real tab */
+    transition: background-color 0.2s ease, border-color 0.2s ease;
     flex-shrink: 0; /* Prevent shrinking */
-    transition: background-color 0.2s ease;
+    line-height: 1; /* Adjust line height for '+' centering if needed */
 }
 
-.add-project-btn:hover {
-    /* background-color: #4cae4c; */
-    background-color: #0056b3; /* Darker accent on hover */
+.project-tab-add:hover {
+    background-color: var(--surface-color); /* Subtle background on hover */
+    border-color: var(--accent-color);
 }
 
 /* Tab Dragging Styles */
@@ -373,10 +372,18 @@ footer {
 /* Style for the input field when creating/renaming a tab */
 .tab-input {
     padding: 6px 10px;
-    border: 1px solid #ccc;
-    font-size: inherit;
+    border: 1px solid var(--accent-color); /* Use accent color for border */
+    font-size: inherit; /* Match tab font size */
     font-family: inherit;
     border-radius: 3px;
-    margin-right: 5px; /* Match tab margin */
+    /* Remove margin-right if input replaces content */
+    /* margin-right: 5px; */ 
     width: 150px; /* Adjust as needed */
+    background-color: var(--surface-color);
+    color: var(--text-color);
+    outline: none;
+    /* Make it visually replace the tab content */
+    box-sizing: border-box; /* Include padding/border in width */
+    height: 100%; /* Try to match tab height */
+    display: block; /* Ensure it takes block space */
 } 
