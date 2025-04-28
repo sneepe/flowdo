@@ -1,6 +1,6 @@
-# Kanban Drag-and-Drop Todo App
+# FlowDo - Drag-and-Drop Kanban App
 
-This is a simple, single-page web application implementing a Kanban-style todo board using HTML, CSS, and vanilla JavaScript.
+This is a simple, single-page web application implementing a Kanban-style todo board called FlowDo, using HTML, CSS, and vanilla JavaScript.
 
 ## Features
 
