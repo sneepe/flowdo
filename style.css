@@ -260,4 +260,123 @@ footer {
     cursor: grab;
     transition: transform 0.2s ease-out, box-shadow 0.2s ease, opacity 0.2s ease;
     word-wrap: break-word; /* Prevent long text from overflowing */
+}
+
+/* Project Tabs */
+.project-tabs-container {
+    display: flex;
+    align-items: center;
+    padding: 5px 10px; /* Adjusted padding */
+    /* background-color: #f0f0f0; */ /* Remove light background */
+    background-color: var(--surface-color); /* Use surface color */
+    border-bottom: 1px solid var(--border-color); /* Use border color */
+    margin-bottom: 1rem; /* Consistent margin */
+}
+
+.project-tabs {
+    display: flex;
+    flex-grow: 1;
+    overflow-x: auto; /* Allow scrolling if many tabs */
+    /* Add scrollbar styling consistency */
+    scrollbar-width: thin; /* Firefox */
+    scrollbar-color: var(--border-color) var(--surface-color); /* Firefox */
+}
+
+/* Webkit Scrollbar Styles for Tabs */
+.project-tabs::-webkit-scrollbar {
+    height: 6px;
+}
+.project-tabs::-webkit-scrollbar-track {
+    background: var(--surface-color);
+    border-radius: 3px;
+}
+.project-tabs::-webkit-scrollbar-thumb {
+    background: var(--border-color);
+    border-radius: 3px;
+}
+.project-tabs::-webkit-scrollbar-thumb:hover {
+    background: #666;
+}
+
+.project-tab {
+    padding: 8px 15px;
+    margin-right: 5px;
+    cursor: pointer;
+    border: 1px solid transparent;
+    border-bottom: none;
+    border-radius: 5px 5px 0 0;
+    /* background-color: #e0e0e0; */ /* Remove light background */
+    background-color: var(--column-bg); /* Use column background */
+    color: var(--text-color); /* Use text color */
+    white-space: nowrap;
+    position: relative; /* Needed for potential close button positioning */
+    transition: background-color 0.2s ease, border-color 0.2s ease;
+}
+
+.project-tab.active {
+    /* background-color: #fff; */ /* Remove light background */
+    background-color: var(--bg-color); /* Use main background for active */
+    border-color: var(--border-color);
+    /* font-weight: bold; */ /* Keep default weight or adjust if needed */
+    position: relative;
+    /* Optional: add a top border or different indicator for active */
+    /* border-top: 2px solid var(--accent-color); */
+    /* margin-top: -2px; */
+}
+
+.project-tab:not(.active):hover {
+    /* background-color: #d5d5d5; */
+    background-color: var(--card-bg); /* Use card background on hover */
+}
+
+.add-project-btn {
+    /* background-color: #5cb85c; */ /* Remove specific green */
+    background-color: var(--accent-color); /* Use accent color */
+    color: white; /* Keep white '+' */
+    border: none;
+    border-radius: 50%;
+    width: 28px;
+    height: 28px;
+    font-size: 20px;
+    line-height: 28px; /* Better vertical centering */
+    text-align: center;
+    cursor: pointer;
+    margin-left: 10px;
+    flex-shrink: 0; /* Prevent shrinking */
+    transition: background-color 0.2s ease;
+}
+
+.add-project-btn:hover {
+    /* background-color: #4cae4c; */
+    background-color: #0056b3; /* Darker accent on hover */
+}
+
+/* Tab Dragging Styles */
+.project-tab.tab-dragging {
+    opacity: 0.5;
+    /* Optional: Change background or add border */
+    /* background-color: var(--accent-color); */
+    /* border: 1px dashed var(--text-color); */
+}
+
+/* Tab Drop Indicators */
+.project-tab.tab-drag-over-before {
+    border-left: 2px solid var(--accent-color); /* Indicator on the left */
+    /* Adjust margin slightly to make space for border */
+    margin-left: -2px; 
+}
+
+.project-tab.tab-drag-over-after {
+    border-right: 2px solid var(--accent-color); /* Indicator on the right */
+}
+
+/* Style for the input field when creating/renaming a tab */
+.tab-input {
+    padding: 6px 10px;
+    border: 1px solid #ccc;
+    font-size: inherit;
+    font-family: inherit;
+    border-radius: 3px;
+    margin-right: 5px; /* Match tab margin */
+    width: 150px; /* Adjust as needed */
 } 
