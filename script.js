@@ -89,37 +89,90 @@ function createTaskElement(task) {
 }
 
 function renderTasks() {
-    // Clear existing tasks from all columns
-    tasksContainers.forEach(container => container.innerHTML = '');
+    console.log("Starting smart render...");
+    const allRenderedTaskIds = new Set(); // Keep track of tasks rendered in this cycle
 
-    // Sort tasks by order within each column before rendering
-    const columnTasks = {};
-    columns.forEach(col => columnTasks[col.id] = []);
+    columns.forEach(column => {
+        const columnId = column.id;
+        const container = column.querySelector('.tasks-container');
+        if (!container) return;
 
-    tasks.forEach(task => {
-        if (columnTasks[task.column]) {
-            columnTasks[task.column].push(task);
+        console.log(`Smart rendering column: ${columnId}`);
+
+        // 1. Get desired state (sorted tasks for this column)
+        const tasksForColumn = tasks
+            .filter(task => task.column === columnId)
+            .sort((a, b) => a.order - b.order);
+
+        // 2. Get current DOM elements for this column
+        const currentTaskElements = Array.from(container.querySelectorAll('.task'));
+        const currentElementMap = new Map(currentTaskElements.map(el => [el.dataset.taskId, el]));
+        console.log(` -> Found ${currentTaskElements.length} existing DOM elements.`);
+
+        // 3. Reconcile: Iterate through desired state and update/move/add DOM elements
+        let previousElement = null; // Keep track of the last correctly positioned element
+        tasksForColumn.forEach((taskData, index) => {
+            allRenderedTaskIds.add(taskData.id); // Mark this task as processed
+            let taskElement = currentElementMap.get(taskData.id);
+
+            if (taskElement) {
+                // --- Task exists: Update and Position --- 
+                console.log(` -> Reconciling existing task: ${taskData.id}`);
+                // Update content/classes if necessary (e.g., completed status, text)
+                taskElement.textContent = taskData.title; // Ensure title is up-to-date
+                 // Ensure correct 'completed' class state
+                 if (taskData.column === 'col-completed' && !taskElement.classList.contains('completed')) {
+                     taskElement.classList.add('completed');
+                 } else if (taskData.column !== 'col-completed' && taskElement.classList.contains('completed')) {
+                     taskElement.classList.remove('completed');
+                 }
+                 // Update color if needed (less common, but for completeness)
+                 if (taskElement.style.backgroundColor !== taskData.color) {
+                      taskElement.style.backgroundColor = taskData.color || taskColors[0];
+                 }
+
+                // Check position: Should it be after `previousElement`?
+                 // The `insertBefore` method handles moves correctly. If the element
+                 // is already in the correct position relative to the target sibling,
+                 // it effectively does nothing.
+                const expectedNextSibling = previousElement ? previousElement.nextElementSibling : container.firstChild;
+                if (taskElement !== expectedNextSibling) {
+                     console.log(` -> Moving task ${taskData.id} to position ${index}`);
+                     container.insertBefore(taskElement, expectedNextSibling);
+                }
+                previousElement = taskElement; // Update the reference to the last correctly positioned element
+                currentElementMap.delete(taskData.id); // Remove from map as it's been handled
+            } else {
+                // --- Task doesn't exist: Create and Insert --- 
+                console.log(` -> Creating and inserting new task: ${taskData.id} at position ${index}`);
+                taskElement = createTaskElement(taskData);
+                // Insert at the correct position relative to the last placed element
+                const insertBeforeElement = previousElement ? previousElement.nextElementSibling : container.firstChild;
+                container.insertBefore(taskElement, insertBeforeElement);
+                previousElement = taskElement; // Update the reference
+            }
+        });
+
+        // 4. Remove leftover elements: Any elements remaining in currentElementMap 
+        //    are no longer in the desired state for this column.
+        currentElementMap.forEach((elementToRemove, taskId) => {
+            console.log(` -> Removing task ${taskId} from column ${columnId}`);
+            container.removeChild(elementToRemove);
+        });
+    });
+
+    // Optional: A final check for tasks in the `tasks` array that somehow weren't rendered 
+    // (e.g., assigned to a non-existent column). This is more defensive coding.
+    tasks.forEach(taskData => {
+        if (!allRenderedTaskIds.has(taskData.id)) {
+             console.warn(`Task ${taskData.id} exists in data but was not rendered. Assigning to default column.`);
+             taskData.column = 'col-todo'; // Or handle appropriately
+             // Potentially call renderTasks again or handle the error
         }
     });
 
-    // Sort tasks within each column array by their 'order'
-    for (const columnId in columnTasks) {
-        columnTasks[columnId].sort((a, b) => a.order - b.order);
-    }
-
-    // Append sorted tasks to the correct column container
-    for (const columnId in columnTasks) {
-        const container = document.getElementById(columnId)?.querySelector('.tasks-container');
-        if (container) {
-            columnTasks[columnId].forEach(task => {
-                const taskElement = createTaskElement(task);
-                container.appendChild(taskElement);
-            });
-        }
-    }
-
-    console.log("Rendered tasks:", tasks);
-    saveTasksToLocalStorage();
+    console.log("Smart render finished.");
+    // saveTasksToLocalStorage(); // Save is already called after drop/add/delete
 }
 
 function addTask(title) {
@@ -265,7 +318,7 @@ function handleDragOverTask(event) {
     updateDraggedTaskPosition(event, columnElement);
 }
 
-// Renamed function: Moves the actual dragged task element
+// Renamed function: Moves the actual dragged task element AND animates siblings
 function updateDraggedTaskPosition(event, columnElement) {
     if (!draggedTask) return;
 
@@ -274,11 +327,11 @@ function updateDraggedTaskPosition(event, columnElement) {
 
     // --- Calculate Target Position based on Mouse --- 
     const dropY = event.clientY;
-    const tasksInColumn = container.querySelectorAll('.task:not(.dragging)'); // Exclude only the dragging task itself
+    const tasksInColumn = container.querySelectorAll('.task:not(.dragging)'); 
     let elementToInsertBefore = null;
     for (const taskElement of tasksInColumn) {
         const rect = taskElement.getBoundingClientRect();
-        const threshold = rect.top + rect.height * 0.55; // Use 55% threshold
+        const threshold = rect.top + rect.height * 0.55; 
         if (dropY < threshold) {
             elementToInsertBefore = taskElement;
             break;
@@ -286,56 +339,105 @@ function updateDraggedTaskPosition(event, columnElement) {
     }
     // --- End Calculation ---
 
-    // --- MOVE the draggedTask Element --- 
-    try {
-        // Check if it's already in the right place
-        if (draggedTask.parentNode === container && draggedTask.nextElementSibling === elementToInsertBefore) {
-             // Already in the correct position relative to the target, do nothing
-        } else {
-            // Needs insertion or move
+    // --- Check if Move is Needed --- 
+    const needsMove = !(draggedTask.parentNode === container && draggedTask.nextElementSibling === elementToInsertBefore);
+
+    if (needsMove) {
+        // --- 1. Record PRE-MOVE positions of SIBLINGS --- 
+        const preMovePositions = new Map();
+        const siblingTasks = container.querySelectorAll('.task:not(.dragging)');
+        siblingTasks.forEach(taskEl => {
+            preMovePositions.set(taskEl.dataset.taskId, taskEl.getBoundingClientRect());
+        });
+
+        // --- 2. MOVE the draggedTask Element --- 
+        try {
             if (elementToInsertBefore) {
                  container.insertBefore(draggedTask, elementToInsertBefore);
             } else {
                 container.appendChild(draggedTask);
             }
+        } catch (domError) {
+            console.error("Error moving dragged task:", domError);
+            return; // Exit if move failed
         }
-    } catch (domError) {
-        console.error("Error moving dragged task:", domError);
+
+        // --- 3. Animate SIBLINGS based on position change --- 
+        siblingTasks.forEach(taskEl => {
+            const taskId = taskEl.dataset.taskId;
+            const preMoveRect = preMovePositions.get(taskId);
+            if (!preMoveRect) return; // Should exist, but safety check
+
+            const postMoveRect = taskEl.getBoundingClientRect();
+            const deltaY = preMoveRect.top - postMoveRect.top;
+            const deltaX = preMoveRect.left - postMoveRect.left; // Also capture X delta just in case
+
+            // Only animate if position actually changed significantly
+            if (Math.abs(deltaY) > 1 || Math.abs(deltaX) > 1) { 
+                 // console.log(`Animating sibling ${taskId}: dX=${deltaX.toFixed(1)}, dY=${deltaY.toFixed(1)}`);
+                 taskEl.animate([
+                     { transform: `translate(${deltaX}px, ${deltaY}px)` }, // Start from PREVIOUS pos
+                     { transform: 'translate(0, 0)' }                   // Animate to CURRENT pos
+                 ], {
+                     duration: 150, // Slightly faster animation during drag
+                     easing: 'ease-out',
+                     fill: 'backwards' // Apply starting state immediately
+                 });
+            }
+        });
     }
-    // --- End Moving --- 
+    // --- End Moving & Animating --- 
 }
 
 // Drop on columns
 function handleDropOnColumn(event) {
     event.preventDefault();
     event.stopPropagation();
-    this.classList.remove('drag-over');
+    const targetColumnElement = this; 
+    targetColumnElement.classList.remove('drag-over');
 
-    const targetColumnId = this.id;
-    if (!draggedTaskId || !draggedTask) return; // Need both ID and element ref
+    const targetColumnId = targetColumnElement.id;
+    if (!draggedTaskId || !draggedTask) return;
 
-    lastDroppedTaskId = draggedTaskId; // Keep for potential animation (though not used now)
+    lastDroppedTaskId = draggedTaskId;
 
-    console.log(`--- Drop Event Start (New Approach) ---`);
+    console.log(`--- Drop Event Start (Reverted Animation) ---`);
     console.log(`Drop on Column: ${targetColumnId}, Task: ${draggedTaskId}`);
 
-    // --- Step 1: Find the final target element based on the last position --- 
-    // The dragged task is already in the DOM where the preview was.
-    // We need to find what element it ended up *before*, or if it's at the end.
-    const elementToInsertBefore = draggedTask.nextElementSibling; // The element immediately after the dragged task in its final DOM position
+    // --- Remove Pre-computation --- 
+    // const initialPositions = new Map(); ... removed ...
+    const container = targetColumnElement.querySelector('.tasks-container'); // Still need container ref if used below
+    if (!container) {
+         console.error("Could not find tasks container.");
+         return; 
+    }
+    // --- End Remove Pre-computation --- 
+
+    // --- Step 1: Determine Target Element ID based on drop coordinates --- 
+    const dropY = event.clientY;
+    let elementToInsertBefore = null;
+    const tasksForThreshold = container.querySelectorAll('.task:not(.dragging)');
+    for (const taskElement of tasksForThreshold) {
+        const rect = taskElement.getBoundingClientRect();
+        const threshold = rect.top + rect.height * 0.55;
+        if (dropY < threshold) {
+            elementToInsertBefore = taskElement;
+            break;
+        }
+    }
     const targetElementId = elementToInsertBefore ? elementToInsertBefore.dataset.taskId : null;
-    console.log(`Drop Calc: Target element ID (element after dropped task): ${targetElementId}`);
+    console.log(`Drop Calc: Target element ID (from drop Y ${dropY.toFixed(1)}): ${targetElementId}`);
 
     // --- Step 2: Remove the dragged task data from the array --- 
     const draggedTaskIndex = tasks.findIndex(t => t.id === draggedTaskId);
     if (draggedTaskIndex === -1) {
         console.error("Could not find dragged task in tasks array for removal");
-        renderTasks(); // Re-render to fix potential DOM/data mismatch
-        return; 
+        renderTasks(); // Still call render to try and recover state
+        return;
     }
-    const [draggedTaskData] = tasks.splice(draggedTaskIndex, 1); // Remove from original position
+    const [draggedTaskData] = tasks.splice(draggedTaskIndex, 1);
     const oldColumnId = draggedTaskData.column;
-    draggedTaskData.column = targetColumnId; // Update column in data
+    draggedTaskData.column = targetColumnId;
     console.log(`Task ${draggedTaskId} data removed from original index ${draggedTaskIndex}`);
 
     // --- Step 3: Find the new index in the tasks array based on targetElementId --- 
@@ -344,41 +446,33 @@ function handleDropOnColumn(event) {
         finalInsertionIndex = tasks.findIndex(t => t.id === targetElementId);
         if (finalInsertionIndex === -1) {
              console.warn(`Drop Calc: Target element ${targetElementId} not found in data array AFTER removal! Calculating end index.`);
-             // Fallback logic below will handle this
         }
     }
-    
-    // If no target element (dropped at end) OR target element wasn't found in the modified array
-    if (!targetElementId || finalInsertionIndex === -1) { 
+
+    if (!targetElementId || finalInsertionIndex === -1) {
         console.log(`Drop Calc: Dropped at end or target not found. Calculating end-of-column index.`);
         let lastTaskInColumnIndex = -1;
         for (let i = tasks.length - 1; i >= 0; i--) {
-            // Search within the *current* (modified) tasks array
             if (tasks[i].column === targetColumnId) {
                 lastTaskInColumnIndex = i;
                 break;
             }
         }
-        // Insert *after* the last task of the target column in the modified array
-        finalInsertionIndex = (lastTaskInColumnIndex !== -1) ? lastTaskInColumnIndex + 1 : tasks.length; 
+        finalInsertionIndex = (lastTaskInColumnIndex !== -1) ? lastTaskInColumnIndex + 1 : tasks.length;
         console.log(`Drop Calc: Calculated target end-of-column index: ${finalInsertionIndex}`);
     }
 
-    // Basic validation
      if (finalInsertionIndex < 0) {
         console.warn("Drop Calc: Final calculated index invalid. Appending to end.");
-        finalInsertionIndex = tasks.length; 
+        finalInsertionIndex = tasks.length;
     }
-    // --- End Index Calculation --- 
-
     console.log(`Final data insertion index: ${finalInsertionIndex}`);
 
     // --- Step 4: Insert the dragged task data at the final index --- 
     tasks.splice(finalInsertionIndex, 0, draggedTaskData);
     console.log(`Task ${draggedTaskData.id} data inserted. Tasks array length: ${tasks.length}`);
 
-    // Recalculate order for the affected column(s)
-    // This is still crucial for persistence and consistency
+    // --- Step 5: Recalculate order for affected columns --- 
     console.log(`Recalculating order for target column: ${targetColumnId}`);
     recalculateOrderForColumn(targetColumnId);
     if (oldColumnId !== targetColumnId) {
@@ -386,9 +480,15 @@ function handleDropOnColumn(event) {
     }
 
     saveTasksToLocalStorage();
-    // Re-render to ensure DOM matches the updated data array and order
-    console.log("Calling renderTasks after drop...");
-    renderTasks(); 
+
+    // --- Step 6: Render (NO ANIMATION HERE) --- 
+    console.log("Calling final renderTasks after drop...");
+    // Just call renderTasks directly (smart render handles DOM updates)
+    renderTasks();
+    // --- Remove Animation Logic --- 
+    // requestAnimationFrame(() => { ... removed ... });
+    // --- End Remove Animation Logic --- 
+
     console.log(`--- Drop Event End ---`);
 }
 
