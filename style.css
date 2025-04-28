@@ -97,7 +97,7 @@ h1 {
 /* (Checking previous state... removing header > form styles) */
 /* (Removed old #add-task-form, #new-task-input, button[type="submit"] styles from global scope) */
 
-.kanban-board {
+.app-board {
     display: grid;
     grid-template-columns: repeat(5, 1fr); /* Updated for 5 columns */
     gap: 1rem;
@@ -105,7 +105,7 @@ h1 {
     min-height: 0; /* Prevent overflow issues with flex-grow */
 }
 
-.kanban-column {
+.flowdo-column {
     background-color: var(--column-bg);
     border-radius: 8px;
     padding: 1rem;
@@ -114,7 +114,7 @@ h1 {
     box-shadow: 0 2px 5px var(--shadow-color);
 }
 
-.kanban-column h2 {
+.flowdo-column h2 {
     margin-bottom: 1rem;
     font-size: 1.2rem;
     font-weight: 500;
@@ -196,7 +196,7 @@ h1 {
 /* Class to apply when task makes space for placeholder - REMOVED */
 /* .task-displaced { ... } */
 
-.kanban-column.drag-over {
+.flowdo-column.drag-over {
     background-color: var(--drag-over-bg);
     margin-top: -3px; /* Adjust for border */
 }

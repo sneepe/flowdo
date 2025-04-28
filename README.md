@@ -1,36 +1,40 @@
-# FlowDo - Drag-and-Drop Kanban App
+# FlowDo - Drag-and-Drop Project Board App
 
-This is a simple, single-page web application implementing a Kanban-style todo board called FlowDo, using HTML, CSS, and vanilla JavaScript.
+This is a simple, single-page web application implementing a multi-column project board called FlowDo, using HTML, CSS, and vanilla JavaScript. It allows users to manage tasks across different stages within multiple projects.
 
 ## Features
 
-*   **Kanban Board:** Organizes tasks into multiple columns (e.g., Todo, Planning, In Progress, Testing, Completed).
-*   **Task Management:** Add new tasks to the 'Todo' column.
-*   **Drag and Drop:**
-    *   Move tasks between different columns.
-    *   Reorder tasks within the same column.
-    *   Drag tasks to a designated "Trash Area" to delete them.
-*   **Smooth Animations:** Other tasks smoothly animate out of the way when dragging a task over them.
-*   **Task Colors:** New tasks are automatically assigned a color from a predefined palette for visual distinction.
-*   **Persistence:** Task data (content, column, order, color) is saved to the browser's Local Storage, so tasks persist across page reloads.
-*   **Responsive Design:** Basic layout adjustments for different screen sizes.
+*   **Multi-Project Tabs:** Create and switch between different projects.
+*   **Project Board:** Organizes tasks into multiple columns (e.g., Todo, Planning, In Progress, Testing, Completed).
+*   **Task Management:** Add, drag-and-drop tasks between columns.
+*   **Drag-and-Drop Reordering:** Reorder tasks within a column and reorder project tabs.
+*   **Persistence:** Saves project and task data to the browser's local storage.
+*   **Task Deletion:** Drag tasks to the trash area to delete.
+*   **Project Deletion:** Drag project tabs to the trash area to delete (with confirmation).
+*   **Inline Project Creation:** Click the '+' tab to name and create a new project directly.
+*   **Responsive(ish) Design:** Basic layout adjusts to different screen sizes.
 
-## How to Run
+## How to Use
 
-1.  Clone or download the project files.
-2.  Open the `index.html` file directly in your web browser.
+1.  Clone or download the repository.
+2.  Open the `index.html` file in your web browser.
+3.  Use the '+' tab to create projects.
+4.  Add tasks in the 'ToDo' column.
+5.  Drag tasks between columns to update their status.
+6.  Drag tasks within a column to reorder them.
+7.  Drag project tabs to reorder them.
+8.  Drag tasks or project tabs to the trash area at the bottom to delete.
 
-No build steps or server setup is required.
-
-## Project Structure
+## Code Structure
 
 *   `index.html`: The main HTML structure of the application.
-*   `style.css`: Contains all the CSS rules for styling the board, columns, tasks, and animations.
-*   `script.js`: Contains all the JavaScript logic for:
-    *   Task creation, rendering, and deletion.
-    *   Drag and drop event handling.
-    *   Local Storage persistence.
-    *   DOM manipulation and animations.
+*   `style.css`: Contains all the CSS rules for styling the application, including the dark theme and layout.
+*   `script.js`: Holds all the JavaScript logic for:
+    *   State management (`appData`).
+    *   Local storage persistence.
+    *   Rendering UI components (tabs, columns, tasks).
+    *   Handling user interactions (adding tasks/projects, drag-and-drop).
+    *   Event listeners.
 
 ## Future Enhancements (Ideas)
 

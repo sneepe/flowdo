@@ -3,7 +3,7 @@ console.log("Script start"); // Log script execution start
 // --- DOM Elements ---
 const taskForm = document.getElementById('add-task-form');
 const newTaskInput = document.getElementById('new-task-input');
-let columns = document.querySelectorAll('.kanban-column');
+let columns = document.querySelectorAll('.flowdo-column');
 let tasksContainers = document.querySelectorAll('.tasks-container');
 const trashArea = document.getElementById('trash-area');
 // --- Project Tab Elements ---
@@ -18,7 +18,7 @@ let appData = {
     projects: [], // { id, name, tasks: [{ id, title, column, order, color }] }
     activeProjectId: null
 };
-const APP_DATA_STORAGE_KEY = 'kanbanAppData';
+const APP_DATA_STORAGE_KEY = 'flowdoAppData';
 // --- End New State Structure ---
 
 let draggedTask = null; // Element being dragged
@@ -28,6 +28,12 @@ let lastDroppedTaskId = null; // Track last dropped task for animation
 let draggedTab = null; // Tab element being dragged
 let draggedTabId = null; // Project ID of the tab being dragged
 let isAddingProject = false; // Flag to prevent multiple add inputs
+
+// --- State for Tab Edit Click Detection ---
+let tabMouseDownTarget = null;
+let tabMouseDownTime = 0;
+let isEditingProjectName = false; // Flag to indicate an edit input is active
+// --- End Tab Edit State ---
 
 // --- Color Palette ---
 // Expanded palette of background colors for tasks (suitable for dark theme)
@@ -199,20 +205,145 @@ function handleTabClickLogic(projectId) {
     }
 }
 
+// --- Project Name Editing Functions ---
+let originalProjectName = ''; // Store the name before editing
+
+function initiateProjectNameEdit(tabElement) {
+    // --- ADD CHECK: Only edit if it's the ACTIVE tab --- 
+    if (isEditingProjectName || !tabElement || !tabElement.classList.contains('active')) { 
+        console.log("[Edit Init] Aborted: Already editing, no tab, or tab not active.");
+        return; 
+    }
+    // --- END CHECK ---
+
+    const projectId = tabElement.dataset.projectId;
+    const project = appData.projects.find(p => p.id === projectId);
+    if (!project) {
+        console.error("Cannot edit: Project not found for ID", projectId);
+        return;
+    }
+
+    console.log("Initiating edit for project:", projectId);
+    isEditingProjectName = true;
+    originalProjectName = project.name;
+    
+    // Temporarily make tab undraggable while editing
+    tabElement.setAttribute('draggable', 'false');
+
+    // Store original padding/display before replacing content
+    const originalPadding = tabElement.style.padding;
+    const originalDisplay = tabElement.style.display; // Might not be needed
+    tabElement.innerHTML = ''; // Clear text
+    tabElement.style.padding = '0'; // Remove padding for input fit
+
+    const input = document.createElement('input');
+    input.type = 'text';
+    input.classList.add('tab-input');
+    input.value = originalProjectName;
+    input.dataset.projectId = projectId; // Keep track of which project
+    input.dataset.originalPadding = originalPadding; // Store for restoration
+    input.dataset.originalDisplay = originalDisplay;
+
+    input.addEventListener('blur', handleProjectNameInput);
+    input.addEventListener('keydown', handleProjectNameInput);
+
+    tabElement.appendChild(input);
+    input.focus();
+    input.select();
+}
+
+function handleProjectNameInput(event) {
+    const inputElement = event.target;
+    const projectId = inputElement.dataset.projectId;
+    const newName = inputElement.value.trim();
+
+    // Handle Enter or Escape keydown
+    if (event.type === 'keydown') {
+        if (event.key === 'Enter') {
+            event.preventDefault(); // Prevent default form submission if any
+            if (newName && newName !== originalProjectName) {
+                updateProjectName(projectId, newName);
+            }
+            cancelProjectNameEdit(inputElement); // Finish editing (saves or reverts)
+        } else if (event.key === 'Escape') {
+            console.log("Edit cancelled via Escape");
+            cancelProjectNameEdit(inputElement, true); // Force revert to original name
+        }
+        return; // Don't process blur if keydown handled it
+    }
+
+    // Handle Blur
+    if (event.type === 'blur') {
+        // Check flag again in case keydown already handled it
+        if (!isEditingProjectName) return; 
+
+        if (newName && newName !== originalProjectName) {
+            updateProjectName(projectId, newName);
+        }
+        cancelProjectNameEdit(inputElement);
+    }
+}
+
+function updateProjectName(projectId, newName) {
+    const projectIndex = appData.projects.findIndex(p => p.id === projectId);
+    if (projectIndex !== -1) {
+        console.log(`Updating project ${projectId} name to: ${newName}`);
+        appData.projects[projectIndex].name = newName;
+        saveAppData();
+    } else {
+        console.error("Could not find project to update name for ID:", projectId);
+    }
+}
+
+function cancelProjectNameEdit(inputElement, forceRevert = false) {
+    if (!inputElement || !isEditingProjectName) return;
+
+    const tabElement = inputElement.closest('.project-tab');
+    const projectId = inputElement.dataset.projectId;
+    const project = appData.projects.find(p => p.id === projectId);
+    const currentName = project ? project.name : originalProjectName; // Use updated name from appData if available
+    
+    // Remove listeners before removing element
+    inputElement.removeEventListener('blur', handleProjectNameInput);
+    inputElement.removeEventListener('keydown', handleProjectNameInput);
+
+    if (tabElement) {
+        tabElement.removeChild(inputElement);
+        // Use current name from data, or revert if Escape was pressed
+        tabElement.textContent = forceRevert ? originalProjectName : currentName;
+        tabElement.style.padding = inputElement.dataset.originalPadding || '';
+        // Restore draggable status
+        tabElement.setAttribute('draggable', 'true');
+    }
+
+    isEditingProjectName = false;
+    originalProjectName = '';
+    console.log("Project name edit cancelled/completed for", projectId);
+
+    // Optional: Full re-render to ensure consistency, though direct text update might suffice
+    // renderTabs(); 
+}
+// --- End Project Name Editing Functions ---
+
 // --- Tab Drag and Drop Handlers ---
 function handleTabDragStart(event) {
     const target = event.target;
-    if (target.classList.contains('project-tab')) {
-        draggedTab = target;
-        draggedTabId = target.dataset.projectId;
-        event.dataTransfer.setData('text/plain', draggedTabId);
-        event.dataTransfer.effectAllowed = 'move';
-        // Delay adding class to allow drag image generation
-        setTimeout(() => {
-            draggedTab.classList.add('tab-dragging');
-        }, 0);
-        console.log("Tab Drag Start:", draggedTabId);
+    // Prevent dragging if an edit is in progress or if target isn't a project tab
+    if (isEditingProjectName || !target.classList.contains('project-tab') || target.classList.contains('project-tab-add')) {
+        event.preventDefault(); // Prevent drag start
+        console.log("Tab drag prevented (editing or not a draggable tab).");
+        return;
     }
+    
+    draggedTab = target;
+    draggedTabId = target.dataset.projectId;
+    event.dataTransfer.setData('text/plain', draggedTabId);
+    event.dataTransfer.effectAllowed = 'move';
+    // Delay adding class to allow drag image generation
+    setTimeout(() => {
+        draggedTab.classList.add('tab-dragging');
+    }, 0);
+    console.log("Tab Drag Start:", draggedTabId);
 }
 
 function handleTabDragOver(event) {
@@ -533,7 +664,7 @@ function handleDragOverTask(event) {
     event.stopPropagation(); // Prevent triggering column's dragover
 
     const targetTaskElement = event.target.closest('.task');
-    const columnElement = event.target.closest('.kanban-column');
+    const columnElement = event.target.closest('.flowdo-column');
 
     if (!columnElement) return; // Should always have a column
 
@@ -1024,7 +1155,7 @@ function initializeApp() {
     taskForm.addEventListener('submit', handleAddTaskSubmit);
 
     // Re-select columns after potential DOM changes
-    columns = document.querySelectorAll('.kanban-column');
+    columns = document.querySelectorAll('.flowdo-column');
     tasksContainers = document.querySelectorAll('.tasks-container');
 
     // Add drag/drop listeners to columns
@@ -1057,7 +1188,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Get Element References ---
     const projectTabsContainer = document.getElementById('project-tabs');
-    const columns = document.querySelectorAll('.kanban-column');
+    const columns = document.querySelectorAll('.flowdo-column');
     const addTaskForm = document.getElementById('add-task-form');
     const newTaskInput = document.getElementById('new-task-input');
     const trashArea = document.getElementById('trash-area');
@@ -1078,22 +1209,66 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // --- Add Event Listeners ---
 
-    // Project Tab Clicks & Drag/Drop (using event delegation on container)
+    // Project Tab Container Listener (Clicks & Drag/Drop)
     if (projectTabsContainer) {
-        // Click Handler
+        // Click Handler (Delegated) - For Switching and Adding
         projectTabsContainer.addEventListener('click', (event) => {
+             // Prevent click actions if we are currently editing a name
+             if (isEditingProjectName) return;
+
              const tab = event.target.closest('.project-tab, .project-tab-add');
-             if (!tab) return; // Click wasn't on a tab or the add button
+             if (!tab) return;
 
              if (tab.id === 'add-project-tab') {
                  console.log("Add project tab clicked");
-                 showAddProjectInput(tab); // Initiate inline input
+                 showAddProjectInput(tab);
              } else if (tab.classList.contains('project-tab')) {
-                 handleTabClickLogic(tab.dataset.projectId); // Handle regular tab click
+                 handleTabClickLogic(tab.dataset.projectId);
              }
         });
 
-        // Drag Handlers
+        // Mousedown Handler (Delegated) - For detecting potential edit click start
+        projectTabsContainer.addEventListener('mousedown', (event) => {
+            // Only interested in actual project tabs, not the add button or inputs
+            const tab = event.target.closest('.project-tab');
+            if (tab && !isEditingProjectName && event.button === 0) { // Only left clicks
+                tabMouseDownTarget = tab;
+                tabMouseDownTime = Date.now();
+                console.log("[Edit Detect] Mouse Down on tab:", tab.dataset.projectId);
+            } else {
+                tabMouseDownTarget = null; // Reset if not on a valid tab
+            }
+        });
+
+        // Mouseup Handler (Delegated) - For detecting potential edit click end
+        projectTabsContainer.addEventListener('mouseup', (event) => {
+            // Check if a potential edit click was started
+            if (tabMouseDownTarget && event.button === 0) {
+                const timeDiff = Date.now() - tabMouseDownTime;
+                // Check if it was the *same* tab element and a short click
+                if (event.target.closest('.project-tab') === tabMouseDownTarget && timeDiff < 300) { // 300ms threshold
+                    console.log("[Edit Detect] Short click detected on:", tabMouseDownTarget.dataset.projectId);
+                    // --- ADD CHECK: Only edit if it's the ACTIVE tab --- 
+                    if (tabMouseDownTarget.classList.contains('active')) {
+                        // Check if click target is not the input itself if one exists
+                        if (!event.target.classList.contains('tab-input')) {
+                            initiateProjectNameEdit(tabMouseDownTarget);
+                        } else {
+                             console.log("[Edit Detect] Click was on input itself, ignoring.");
+                        }
+                    } else {
+                         console.log("[Edit Detect] Clicked tab is not active, ignoring edit trigger.");
+                    }
+                    // --- END CHECK --- 
+                } else {
+                     console.log("[Edit Detect] Mouse up doesn't qualify as edit click (target changed or too long)");
+                }
+            }
+            // Reset detection state regardless
+            tabMouseDownTarget = null;
+        });
+
+        // Drag Handlers (Delegated)
         projectTabsContainer.addEventListener('dragstart', handleTabDragStart);
         projectTabsContainer.addEventListener('dragover', handleTabDragOver);
         projectTabsContainer.addEventListener('drop', handleTabDrop);
