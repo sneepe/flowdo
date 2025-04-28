@@ -74,7 +74,7 @@ function getNextTaskColor() {
 }
 
 // --- Persistence Functions ---
-// const TASKS_STORAGE_KEY = 'kanbanTasks'; // Replaced
+// const TASKS_STORAGE_KEY = 'kanbanTasks'; // REMOVED - Obsolete comment
 
 function generateId(prefix = 'id') {
     return `${prefix}-${Date.now()}-${Math.random().toString(16).slice(2)}`;
@@ -321,7 +321,7 @@ function cancelProjectNameEdit(inputElement, forceRevert = false) {
     console.log("Project name edit cancelled/completed for", projectId);
 
     // Optional: Full re-render to ensure consistency, though direct text update might suffice
-    // renderTabs(); 
+    // renderTabs(); // Leaving this commented as direct update seems sufficient for now
 }
 // --- End Project Name Editing Functions ---
 
@@ -559,7 +559,7 @@ function recalculateOrder(columnId) {
 
 // Helper to determine the next order value for a new task in a column for the ACTIVE project
 function getNextOrderForColumn(columnId) {
-    const activeTasks = getActiveTasks(); // Get tasks for the current project
+    const activeTasks = getActiveTasks();
     const tasksInColumn = activeTasks.filter(task => task.column === columnId);
     return tasksInColumn.length > 0 ? Math.max(...tasksInColumn.map(t => t.order)) + 1 : 0;
 }
@@ -1178,93 +1178,53 @@ function initializeApp() {
     trashArea.addEventListener('dragleave', handleDragLeaveTrash);
     trashArea.addEventListener('drop', handleDropOnTrash);
 
-    console.log("App Initialized - Event listeners added.");
-}
-
-// Start the app using DOMContentLoaded
-console.log("Adding DOMContentLoaded listener...");
-document.addEventListener('DOMContentLoaded', () => {
-    console.log("DOM fully loaded and parsed");
-
-    // --- Get Element References ---
-    const projectTabsContainer = document.getElementById('project-tabs');
-    const columns = document.querySelectorAll('.flowdo-column');
-    const addTaskForm = document.getElementById('add-task-form');
-    const newTaskInput = document.getElementById('new-task-input');
-    const trashArea = document.getElementById('trash-area');
-    const addProjectBtn = document.getElementById('add-project-btn'); // Get Add Project button
-
-    // --- Load Data ---
-    initializeApp(); // This loads data and sets up initial state
-
-    // --- Render Initial UI ---
-    if (appData) {
-        renderTabs(); // Render initial tabs
-        renderTasks(); // Render initial tasks for the active project
-    } else {
-        console.error("Initialization failed: appData is not available.");
-        // Handle error, maybe show a message to the user
-        return; // Stop further execution if appData is missing
-    }
-
-    // --- Add Event Listeners ---
-
-    // Project Tab Container Listener (Clicks & Drag/Drop)
+    // --- Add Project Tab Container Listeners --- 
+    // Moved from DOMContentLoaded for better organization
     if (projectTabsContainer) {
         // Click Handler (Delegated) - For Switching and Adding
         projectTabsContainer.addEventListener('click', (event) => {
-             // Prevent click actions if we are currently editing a name
-             if (isEditingProjectName) return;
-
-             const tab = event.target.closest('.project-tab, .project-tab-add');
-             if (!tab) return;
-
-             if (tab.id === 'add-project-tab') {
-                 console.log("Add project tab clicked");
-                 showAddProjectInput(tab);
-             } else if (tab.classList.contains('project-tab')) {
-                 handleTabClickLogic(tab.dataset.projectId);
-             }
+            if (isEditingProjectName) return;
+            const tab = event.target.closest('.project-tab, .project-tab-add');
+            if (!tab) return;
+            if (tab.id === 'add-project-tab') {
+                console.log("Add project tab clicked");
+                showAddProjectInput(tab);
+            } else if (tab.classList.contains('project-tab')) {
+                handleTabClickLogic(tab.dataset.projectId);
+            }
         });
 
-        // Mousedown Handler (Delegated) - For detecting potential edit click start
+        // Mousedown Handler (Delegated) - For edit detection start
         projectTabsContainer.addEventListener('mousedown', (event) => {
-            // Only interested in actual project tabs, not the add button or inputs
             const tab = event.target.closest('.project-tab');
-            if (tab && !isEditingProjectName && event.button === 0) { // Only left clicks
+            if (tab && !isEditingProjectName && event.button === 0) {
                 tabMouseDownTarget = tab;
                 tabMouseDownTime = Date.now();
                 console.log("[Edit Detect] Mouse Down on tab:", tab.dataset.projectId);
             } else {
-                tabMouseDownTarget = null; // Reset if not on a valid tab
+                tabMouseDownTarget = null;
             }
         });
 
-        // Mouseup Handler (Delegated) - For detecting potential edit click end
+        // Mouseup Handler (Delegated) - For edit detection end
         projectTabsContainer.addEventListener('mouseup', (event) => {
-            // Check if a potential edit click was started
             if (tabMouseDownTarget && event.button === 0) {
                 const timeDiff = Date.now() - tabMouseDownTime;
-                // Check if it was the *same* tab element and a short click
-                if (event.target.closest('.project-tab') === tabMouseDownTarget && timeDiff < 300) { // 300ms threshold
+                if (event.target.closest('.project-tab') === tabMouseDownTarget && timeDiff < 300) {
                     console.log("[Edit Detect] Short click detected on:", tabMouseDownTarget.dataset.projectId);
-                    // --- ADD CHECK: Only edit if it's the ACTIVE tab --- 
                     if (tabMouseDownTarget.classList.contains('active')) {
-                        // Check if click target is not the input itself if one exists
                         if (!event.target.classList.contains('tab-input')) {
                             initiateProjectNameEdit(tabMouseDownTarget);
                         } else {
-                             console.log("[Edit Detect] Click was on input itself, ignoring.");
+                            console.log("[Edit Detect] Click was on input itself, ignoring.");
                         }
                     } else {
-                         console.log("[Edit Detect] Clicked tab is not active, ignoring edit trigger.");
+                        console.log("[Edit Detect] Clicked tab is not active, ignoring edit trigger.");
                     }
-                    // --- END CHECK --- 
                 } else {
-                     console.log("[Edit Detect] Mouse up doesn't qualify as edit click (target changed or too long)");
+                    console.log("[Edit Detect] Mouse up doesn't qualify as edit click (target changed or too long)");
                 }
             }
-            // Reset detection state regardless
             tabMouseDownTarget = null;
         });
 
@@ -1273,27 +1233,50 @@ document.addEventListener('DOMContentLoaded', () => {
         projectTabsContainer.addEventListener('dragover', handleTabDragOver);
         projectTabsContainer.addEventListener('drop', handleTabDrop);
         projectTabsContainer.addEventListener('dragend', handleTabDragEnd);
-        // Add dragleave to clear indicators when leaving the container
         projectTabsContainer.addEventListener('dragleave', (event) => {
             if (!projectTabsContainer.contains(event.relatedTarget)) {
-                 clearTabDragIndicators();
+                clearTabDragIndicators();
             }
         });
-
     } else {
-        console.error("Error: Project tabs container not found");
+        console.error("Initialize App Error: Project tabs container not found");
     }
+    // --- End Project Tab Container Listeners ---
 
-    // Add Task Form Submission
-    if (addTaskForm) {
-        // ... existing code ...
+    console.log("App Initialized - All event listeners added.");
+}
+
+// Start the app using DOMContentLoaded
+console.log("Adding DOMContentLoaded listener...");
+document.addEventListener('DOMContentLoaded', () => {
+    console.log("DOM fully loaded and parsed");
+
+    // Get Global Element References (Optional - could be done in initializeApp too)
+    // const projectTabsContainer = document.getElementById('project-tabs');
+    // const columns = document.querySelectorAll('.flowdo-column');
+    // const addTaskForm = document.getElementById('add-task-form');
+    // const newTaskInput = document.getElementById('new-task-input');
+    // const trashArea = document.getElementById('trash-area');
+
+    // --- Load Data, Set up listeners, Render Initial UI --- 
+    initializeApp(); 
+
+    // --- Render Initial UI (Moved call inside initializeApp potentially?) ---
+    // This is slightly redundant if initializeApp calls renderTabs/Tasks at the end
+    // Let's check initializeApp... it doesn't explicitly call renderTabs.
+    // We need initial renders *after* initializeApp sets everything up.
+    if (appData) {
+        console.log("DOMContentLoaded: Calling initial renderTabs and renderTasks.");
+        renderTabs(); 
+        renderTasks();
     } else {
-        console.error("Error: Add task form not found");
+        console.error("DOMContentLoaded: Initialization failed, cannot render initial UI.");
+        return; 
     }
+    
+    // --- Event Listeners Previously Here (Moved to initializeApp) ---
 
-    // Column/Task Drag and Drop Listeners (attached in initializeApp)
-
-    console.log("DOM Listeners Added (including updated tab delegation)");
+    console.log("DOM Content Loaded - Initial Setup Complete.");
 });
 
 console.log("script.js execution end");
