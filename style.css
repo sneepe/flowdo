@@ -173,27 +173,23 @@ h1 {
 
 /* Drag and Drop Styling */
 .task.dragging {
-    /* Remove original element completely from layout */
-    display: none !important; 
-    /* Opacity/pointer-events etc. are irrelevant if display is none */
+    /* Mark state, prevent interaction, keep visible */
+    pointer-events: none; 
+    /* position: relative; z-index: 1000; Optionally keep on top */
+    /* Remove display:none and low opacity */
 }
 
-/* Style for the cloned task used as placeholder - visually distinct */
-.task-placeholder {
-    /* Inherit most task styles via cloning */
-    opacity: 0.4;
-    border: 2px dashed var(--accent-color) !important; 
-    box-shadow: none !important; 
-    cursor: grabbing;
-    pointer-events: none;
-    /* Ensure it has normal layout */
-    height: auto !important; 
-    padding-top: 0.75rem !important;
-    padding-bottom: 0.75rem !important;
-    margin: 0 !important; /* REMOVE vertical margins */
-    border-width: 1px !important; 
-    overflow: visible !important;
+/* New style for the task acting as its own preview */
+.task-drag-preview {
+    opacity: 0.5; 
+    border: 2px dashed var(--accent-color) !important;
+    box-shadow: none !important;
+    background-color: var(--surface-color) !important; /* Optional: Generic background? */
+    /* cursor: grabbing; Should be handled by browser */
 }
+
+/* Style for the cloned task used as placeholder - REMOVED */
+/* .task-placeholder { ... } */
 
 /* Remove margin-top from a task if it directly follows the placeholder - REMOVED */
 /* .task-placeholder + .task { ... } */

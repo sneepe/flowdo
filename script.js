@@ -12,9 +12,7 @@ let tasks = []; // Array to hold task objects { id, title, column, order }
 let draggedTask = null; // Element being dragged
 let draggedTaskId = null; // ID of the task being dragged
 let nextColorIndex = 0; // Index for cycling through taskColors
-let taskClonePlaceholder = null; // Placeholder element (will be a clone)
 let lastDroppedTaskId = null; // Track last dropped task for animation
-let originalNextSibling = null; // Track element originally after the dragged task
 
 // --- Color Palette ---
 // Expanded palette of background colors for tasks (suitable for dark theme)
@@ -116,19 +114,6 @@ function renderTasks() {
             columnTasks[columnId].forEach(task => {
                 const taskElement = createTaskElement(task);
                 container.appendChild(taskElement);
-
-                // --- Trigger Drop Animation --- 
-                /* REMOVED
-                if (task.id === lastDroppedTaskId) {
-                    taskElement.classList.add('task-dropped-in');
-                    // Remove the class after animation duration (e.g., 200ms)
-                    setTimeout(() => {
-                        taskElement.classList.remove('task-dropped-in');
-                        lastDroppedTaskId = null; // Clear after animation
-                    }, 200);
-                }
-                */
-                // --- End Trigger Drop Animation ---
             });
         }
     }
@@ -190,7 +175,6 @@ function handleDragStart(event) {
     if (event.target.classList.contains('task')) {
         draggedTask = event.target;
         draggedTask.dataset.draggingSource = 'true'; // Mark the source
-        originalNextSibling = draggedTask.nextElementSibling; // Store original next sibling
         draggedTaskId = event.target.dataset.taskId;
         event.dataTransfer.setData('text/plain', draggedTaskId);
         event.dataTransfer.effectAllowed = 'move';
@@ -201,21 +185,19 @@ function handleDragStart(event) {
         taskClone.style.top = '-9999px'; // Position off-screen
         taskClone.style.opacity = '0.95'; // Make the GHOST less transparent
         taskClone.style.pointerEvents = 'none'; // Prevent interference
-        // Explicitly set background to combat potential transparency issues
         const computedStyle = window.getComputedStyle(draggedTask);
         taskClone.style.backgroundColor = computedStyle.backgroundColor;
-        document.body.appendChild(taskClone); // Add to body to allow rendering
-        // Set the clone as the drag image (relative position 0,0 is top-left corner)
+        document.body.appendChild(taskClone);
         event.dataTransfer.setDragImage(taskClone, 0, 0);
-        // Schedule removal of the clone after the drag image is captured
         setTimeout(() => {
             document.body.removeChild(taskClone);
         }, 0);
         // --- End Custom Drag Image ---
 
         // Apply styling to the ORIGINAL element (delayed slightly)
-        setTimeout(() => { // Restore timeout
-            draggedTask.classList.add('dragging');
+        setTimeout(() => {
+            draggedTask.classList.add('dragging'); // Keep for state/pointer-events
+            draggedTask.classList.add('task-drag-preview'); // Add preview style
         }, 0);
         console.log(`Drag Start: ${draggedTaskId}`);
     } else {
@@ -226,18 +208,14 @@ function handleDragStart(event) {
 function handleDragEnd(event) {
     if (draggedTask) {
         draggedTask.classList.remove('dragging');
+        draggedTask.classList.remove('task-drag-preview'); // Remove preview style
         delete draggedTask.dataset.draggingSource; // Remove the source marker
         console.log(`Drag End: ${draggedTaskId}`);
     }
     // Clear temporary drag-over styles
     columns.forEach(col => col.classList.remove('drag-over'));
     trashArea.classList.remove('drag-over');
-    // Delay final cleanup slightly to ensure drop handler finishes
-    setTimeout(() => {
-        removePlaceholder(); // Ensure placeholder is removed
-        originalNextSibling = null; // Clear original next sibling
-    }, 0);
-
+    
     draggedTask = null;
     draggedTaskId = null;
 }
@@ -248,34 +226,25 @@ function handleDragOverColumn(event) {
     event.dataTransfer.dropEffect = 'move';
     this.classList.add('drag-over'); // 'this' refers to the column div
 
-    // Update placeholder position based on column hover
-    updatePlaceholderPosition(event, this);
+    // Update dragged task position based on column hover
+    updateDraggedTaskPosition(event, this);
 }
 
 // Drag leaving columns
 function handleDragLeaveColumn(event) {
-    // Check if the related target (where the mouse entered) is outside this column element
     const related = event.relatedTarget;
     const columnRect = this.getBoundingClientRect();
-
-    // Basic check: Is the mouse pointer still physically within the column bounds?
-    // This helps prevent flickering if moving over internal elements.
     if (
         event.clientX >= columnRect.left &&
         event.clientX <= columnRect.right &&
         event.clientY >= columnRect.top &&
         event.clientY <= columnRect.bottom
     ) {
-        // Still inside, likely moving over internal elements, do nothing
         return; 
     }
-
-    // Check if related target is truly outside the column 
-    // (related can be null if leaving the window)
     if (!related || !this.contains(related)) {
         console.log("Leaving column bounds, removing drag-over state");
         this.classList.remove('drag-over');
-        // removePlaceholder(); // REMOVED - Don't remove placeholder on leave, only on drop/end
     }
 }
 
@@ -292,85 +261,48 @@ function handleDragOverTask(event) {
     // Ensure the parent column also shows drag-over state
     columnElement.classList.add('drag-over');
 
-    // Update placeholder based on task hover
-    updatePlaceholderPosition(event, columnElement);
+    // Update dragged task position based on task hover
+    updateDraggedTaskPosition(event, columnElement);
 }
 
-// Helper function to create/move the placeholder
-function updatePlaceholderPosition(event, columnElement) {
+// Renamed function: Moves the actual dragged task element
+function updateDraggedTaskPosition(event, columnElement) {
     if (!draggedTask) return;
-
-    // --- Create/Update Placeholder Clone --- 
-    if (!taskClonePlaceholder) {
-        taskClonePlaceholder = draggedTask.cloneNode(true);
-        taskClonePlaceholder.classList.add('task-placeholder');
-        taskClonePlaceholder.classList.remove('dragging');
-        taskClonePlaceholder.removeAttribute('draggable');
-        taskClonePlaceholder.style.transition = 'none';
-    } else {
-        taskClonePlaceholder.textContent = draggedTask.textContent;
-        taskClonePlaceholder.style.backgroundColor = window.getComputedStyle(draggedTask).backgroundColor;
-    }
-    // --- End Placeholder Creation/Update ---
 
     const container = columnElement.querySelector('.tasks-container');
     if (!container) return;
 
-    // --- Calculate NEW Target Position based on Mouse --- 
+    // --- Calculate Target Position based on Mouse --- 
     const dropY = event.clientY;
-    const tasksInColumn = container.querySelectorAll('.task:not(.dragging):not(.task-placeholder)');
-    let newElementToInsertBefore = null;
+    const tasksInColumn = container.querySelectorAll('.task:not(.dragging)'); // Exclude only the dragging task itself
+    let elementToInsertBefore = null;
     for (const taskElement of tasksInColumn) {
         const rect = taskElement.getBoundingClientRect();
-        const biasedMidpoint = rect.top + rect.height * 0.4; 
-        if (dropY < biasedMidpoint) {
-            newElementToInsertBefore = taskElement;
+        const threshold = rect.top + rect.height * 0.55; // Use 55% threshold
+        if (dropY < threshold) {
+            elementToInsertBefore = taskElement;
             break;
         }
     }
     // --- End Calculation ---
 
-    // --- Position Placeholder --- 
+    // --- MOVE the draggedTask Element --- 
     try {
-        // Determine current insertion point relative to siblings
-        let currentTargetElement = newElementToInsertBefore; // Target determined by mouse position
-        let currentParent = taskClonePlaceholder.parentNode;
-
         // Check if it's already in the right place
-        if (currentParent === container && taskClonePlaceholder.nextElementSibling === currentTargetElement) {
+        if (draggedTask.parentNode === container && draggedTask.nextElementSibling === elementToInsertBefore) {
              // Already in the correct position relative to the target, do nothing
-             console.log("Placeholder already in correct position, skipping move.");
         } else {
             // Needs insertion or move
-            // TEMPORARILY DISABLED PLACEHOLDER INSERTION - REMOVED COMMENT
-            ///*
-            if (currentTargetElement) {
-                 container.insertBefore(taskClonePlaceholder, currentTargetElement);
-                 console.log("Placeholder inserted/moved before target.");
+            if (elementToInsertBefore) {
+                 container.insertBefore(draggedTask, elementToInsertBefore);
             } else {
-                container.appendChild(taskClonePlaceholder);
-                console.log("Placeholder inserted/moved to end.");
+                container.appendChild(draggedTask);
             }
-            // */
         }
-
     } catch (domError) {
-        console.error("Error positioning placeholder:", domError);
+        console.error("Error moving dragged task:", domError);
     }
-    // --- End Position Placeholder ---
-
-}
-
-// Helper function to remove the placeholder
-function removePlaceholder() {
-    // Restore placeholder removal
-    // TEMPORARILY DISABLED PLACEHOLDER REMOVAL - REMOVED COMMENT
-    ///*
-    if (taskClonePlaceholder && taskClonePlaceholder.parentNode) {
-        taskClonePlaceholder.parentNode.removeChild(taskClonePlaceholder);
-    }
-    originalNextSibling = null; // Clear original next sibling here too for safety
-    // */
+    // --- End Moving --- 
 }
 
 // Drop on columns
@@ -378,84 +310,75 @@ function handleDropOnColumn(event) {
     event.preventDefault();
     event.stopPropagation();
     this.classList.remove('drag-over');
-    removePlaceholder(); // Remove placeholder on drop
 
     const targetColumnId = this.id;
-    if (!draggedTaskId) return;
+    if (!draggedTaskId || !draggedTask) return; // Need both ID and element ref
 
-    lastDroppedTaskId = draggedTaskId; // Store ID for animation trigger
+    lastDroppedTaskId = draggedTaskId; // Keep for potential animation (though not used now)
 
-    console.log(`--- Drop Event Start ---`);
-    console.log(`Consolidated Drop on Column/Container: ${targetColumnId}, Task: ${draggedTaskId}`);
+    console.log(`--- Drop Event Start (New Approach) ---`);
+    console.log(`Drop on Column: ${targetColumnId}, Task: ${draggedTaskId}`);
 
+    // --- Step 1: Find the final target element based on the last position --- 
+    // The dragged task is already in the DOM where the preview was.
+    // We need to find what element it ended up *before*, or if it's at the end.
+    const elementToInsertBefore = draggedTask.nextElementSibling; // The element immediately after the dragged task in its final DOM position
+    const targetElementId = elementToInsertBefore ? elementToInsertBefore.dataset.taskId : null;
+    console.log(`Drop Calc: Target element ID (element after dropped task): ${targetElementId}`);
+
+    // --- Step 2: Remove the dragged task data from the array --- 
     const draggedTaskIndex = tasks.findIndex(t => t.id === draggedTaskId);
     if (draggedTaskIndex === -1) {
-        console.error("Could not find dragged task in tasks array");
-        return;
+        console.error("Could not find dragged task in tasks array for removal");
+        renderTasks(); // Re-render to fix potential DOM/data mismatch
+        return; 
     }
-
     const [draggedTaskData] = tasks.splice(draggedTaskIndex, 1); // Remove from original position
     const oldColumnId = draggedTaskData.column;
-    draggedTaskData.column = targetColumnId; // Update column immediately
+    draggedTaskData.column = targetColumnId; // Update column in data
+    console.log(`Task ${draggedTaskId} data removed from original index ${draggedTaskIndex}`);
 
-    console.log(`Task ${draggedTaskId} removed from index ${draggedTaskIndex}, old column: ${oldColumnId}`);
-
-    // --- Calculate Insertion Index on Drop based on Coordinates --- 
-    const container = this.querySelector('.tasks-container');
-    const dropY = event.clientY;
-    let elementToInsertBefore = null;
-    let insertionIndex = -1;
-
-    // Find the first task element whose biased midpoint is below the drop point
-    const tasksInColumn = container.querySelectorAll('.task:not(.dragging):not(.task-placeholder)');
-    for (const taskElement of tasksInColumn) {
-        const rect = taskElement.getBoundingClientRect();
-        const biasedMidpoint = rect.top + rect.height * 0.4; // Use the same 40% bias as preview
-        if (dropY < biasedMidpoint) {
-            elementToInsertBefore = taskElement;
-            console.log(`Drop Calc: Drop Y (${dropY}) is above biased midpoint (${biasedMidpoint}) of task ${taskElement.dataset.taskId}.`);
-            break; 
-        }
-    }
-
-    // Determine the insertion index in the tasks array
-    if (elementToInsertBefore) {
-        // Find the index of the task we determined we should insert before
-        insertionIndex = tasks.findIndex(t => t.id === elementToInsertBefore.dataset.taskId);
-        if (insertionIndex === -1) {
-             console.warn(`Drop Calc: Could not find task index for elementBefore: ${elementToInsertBefore.dataset.taskId}! Falling back.`);
-             // Fallback needed if task was deleted or ID mismatch - calculate end index
+    // --- Step 3: Find the new index in the tasks array based on targetElementId --- 
+    let finalInsertionIndex = -1;
+    if (targetElementId) {
+        finalInsertionIndex = tasks.findIndex(t => t.id === targetElementId);
+        if (finalInsertionIndex === -1) {
+             console.warn(`Drop Calc: Target element ${targetElementId} not found in data array AFTER removal! Calculating end index.`);
+             // Fallback logic below will handle this
         }
     }
     
-    // If no elementToInsertBefore was found OR findIndex failed, calculate end index for the column
-    if (!elementToInsertBefore || insertionIndex === -1) { 
-        console.log(`Drop Calc: No element to insert before found. Calculating end-of-column index.`);
+    // If no target element (dropped at end) OR target element wasn't found in the modified array
+    if (!targetElementId || finalInsertionIndex === -1) { 
+        console.log(`Drop Calc: Dropped at end or target not found. Calculating end-of-column index.`);
         let lastTaskInColumnIndex = -1;
         for (let i = tasks.length - 1; i >= 0; i--) {
+            // Search within the *current* (modified) tasks array
             if (tasks[i].column === targetColumnId) {
                 lastTaskInColumnIndex = i;
                 break;
             }
         }
-        insertionIndex = (lastTaskInColumnIndex !== -1) ? lastTaskInColumnIndex + 1 : tasks.length;
-        console.log(`Drop Calc: Calculated end-of-column index: ${insertionIndex}`);
-    }
-    // --- End Insertion Point Determination ---
-
-    // Check if calculated index is valid
-    if (insertionIndex < 0) {
-        console.warn("Drop Calc: Final insertion index is invalid. Appending to end.");
-        insertionIndex = tasks.length; 
+        // Insert *after* the last task of the target column in the modified array
+        finalInsertionIndex = (lastTaskInColumnIndex !== -1) ? lastTaskInColumnIndex + 1 : tasks.length; 
+        console.log(`Drop Calc: Calculated target end-of-column index: ${finalInsertionIndex}`);
     }
 
-    console.log(`Final insertion index: ${insertionIndex}`);
+    // Basic validation
+     if (finalInsertionIndex < 0) {
+        console.warn("Drop Calc: Final calculated index invalid. Appending to end.");
+        finalInsertionIndex = tasks.length; 
+    }
+    // --- End Index Calculation --- 
 
-    // Insert the dragged task data at the calculated index
-    tasks.splice(insertionIndex, 0, draggedTaskData);
-    console.log(`Task ${draggedTaskData.id} inserted. Tasks array length: ${tasks.length}`);
+    console.log(`Final data insertion index: ${finalInsertionIndex}`);
+
+    // --- Step 4: Insert the dragged task data at the final index --- 
+    tasks.splice(finalInsertionIndex, 0, draggedTaskData);
+    console.log(`Task ${draggedTaskData.id} data inserted. Tasks array length: ${tasks.length}`);
 
     // Recalculate order for the affected column(s)
+    // This is still crucial for persistence and consistency
     console.log(`Recalculating order for target column: ${targetColumnId}`);
     recalculateOrderForColumn(targetColumnId);
     if (oldColumnId !== targetColumnId) {
@@ -463,18 +386,25 @@ function handleDropOnColumn(event) {
     }
 
     saveTasksToLocalStorage();
-    renderTasks();
+    // Re-render to ensure DOM matches the updated data array and order
+    console.log("Calling renderTasks after drop...");
+    renderTasks(); 
+    console.log(`--- Drop Event End ---`);
 }
 
 // Recalculate order for the affected column(s)
 function recalculateOrderForColumn(columnId) {
-    const tasksInColumn = tasks.filter(task => task.column === columnId);
-    tasksInColumn.sort((a, b) => a.order - b.order);
-    let newOrder = 0;
-    tasksInColumn.forEach(task => {
-        task.order = newOrder;
-        newOrder++;
+    console.log(`Recalculating order for column: ${columnId}`);
+    let orderCounter = 0;
+    // Iterate through the main tasks array IN ITS CURRENT ORDER
+    tasks.forEach(task => {
+        if (task.column === columnId) {
+            // Assign sequential order based on current array position within this column
+            task.order = orderCounter++; 
+        }
     });
+    console.log(`Finished recalculating order for ${columnId}. ${orderCounter} tasks found.`);
+    // Removed the problematic sort step
     saveTasksToLocalStorage();
 }
 
@@ -523,6 +453,24 @@ function initializeApp() {
 
     // --- Initialize Color Index --- 
     nextColorIndex = 0; // Reset color index
+    if (tasks.length > 0) {
+        // Find the task with the highest timestamp in its ID
+        const latestTask = tasks.reduce((latest, current) => {
+            const latestTime = parseInt(latest.id.split('-')[1]);
+            const currentTime = parseInt(current.id.split('-')[1]);
+            return currentTime > latestTime ? current : latest;
+        });
+
+        if (latestTask && latestTask.color) {
+            const lastColorIndex = taskColors.indexOf(latestTask.color);
+            if (lastColorIndex !== -1) {
+                nextColorIndex = (lastColorIndex + 1) % taskColors.length;
+                console.log(`Initialized nextColorIndex based on last task color to: ${nextColorIndex}`);
+            }
+        }
+    }
+    // --- End Initialize Color Index ---
+
     // Initial render
     console.log("Calling initial renderTasks...");
     try {
@@ -562,9 +510,7 @@ function initializeApp() {
     console.log("App Initialized - Event listeners added.");
 }
 
-// Start the app - MOVED TO END OF FILE
-// initializeApp();
-
-// --- Ensure ALL functions are defined above this line ---
-
+// Start the app using DOMContentLoaded
+console.log("Adding DOMContentLoaded listener...");
 document.addEventListener('DOMContentLoaded', initializeApp);
+console.log("Script end"); // Log script execution end
